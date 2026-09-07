@@ -1,0 +1,10 @@
+{
+  "InstanceUrl": "https://VOTRE_INSTANCE.service-now.com",
+  "CoreId": "NYON-PRTG",
+  "OAuthClientId": "<CLIENT_ID_FOURNI_PAR_LE_GESTIONNAIRE_DE_SECRETS>",
+  "OAuthClientSecretFile": "C:\\ProgramData\\PRTG-ServiceNow\\servicenow-oauth-client-secret.xml",
+  "OAuthScope": "network_prtg",
+  "HttpTimeoutSeconds": 30,
+  "MaxPostAttempts": 2,
+  "LogPath": "C:\\ProgramData\\PRTG-ServiceNow\\Logs\\prtg-servicenow.log"
+}

@@ -1,0 +1,38 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Validate PowerShell syntax",
+      "type": "shell",
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-Command",
+        "$files = Get-ChildItem -File -Filter '*.ps1' -Recurse; foreach ($file in $files) { $tokens = $null; $errors = $null; [void][System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors); if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error ($file.FullName + ': ' + $_.Message) } } }; if ($Error.Count -gt 0) { exit 1 }"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Validate configuration JSON",
+      "type": "shell",
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-Command",
+        "Get-Content -Raw -LiteralPath .\\config.example.json | ConvertFrom-Json | Out-Null"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Run offline Pester tests",
+      "type": "shell",
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-Command",
+        "Import-Module Pester -RequiredVersion 3.4.0; Invoke-Pester -Script .\\tests\\PRTGServiceNow.Tests.ps1 -EnableExit"
+      ],
+      "problemMatcher": []
+    }
+  ]
+}
