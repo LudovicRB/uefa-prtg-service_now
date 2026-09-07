@@ -39,3 +39,7 @@ Invoke-Pester -Script .\tests\PRTGServiceNow.Tests.ps1
 ## Security
 
 No secret belongs in this workspace, PRTG command line, configuration example, tests, or logs. Logs contain only bounded, cleaned operational metadata and never request/response bodies or authentication headers. See `AGENTS.md` for the complete operational contract.
+
+## GitHub
+
+The configured Git remote `origin` points to `https://github.com/LudovicRB/uefa-prtg-service_now.git`. Keep remotes free of embedded credentials. The repository `.gitignore` excludes exported credentials, environment files, private certificates, logs, and Pester artifacts.

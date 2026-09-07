@@ -25,6 +25,10 @@ Treat `201` as success. Treat documented `409` duplicate events as an explicit i
 
 Secrets remain in user-and-machine-bound CLIXML outside the workspace. Never log or commit credentials, client IDs, access tokens, authorization headers, decrypted CLIXML content, request bodies, response bodies, or authenticated URLs. Require absolute HTTPS instance URLs without user info and leave certificate validation enabled. `Initialize-Secrets.ps1` must keep restrictive ACLs for the PRTG execution identity, SYSTEM, and Administrators.
 
+## Git and GitHub
+
+The local repository has a configured HTTPS `origin` remote on GitHub. Do not place credentials in remotes, commits, documentation, configuration, or GitHub instructions. Keep `.gitignore` protections for secret exports, environment files, certificates, logs, and Pester artifacts.
+
 ## Changes and tests
 
 Every correction to an integration PowerShell script must be supplied as a complete replacement script, not a fragment. Keep Windows PowerShell 5.1 compatibility. Do not add dependencies, extensions, MCP servers, tasks, or folders without a demonstrated need.
