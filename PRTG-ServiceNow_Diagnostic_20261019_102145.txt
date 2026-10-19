@@ -1,0 +1,146 @@
+PRTG to ServiceNow diagnostic report
+Timestamp: 2026-10-19 10:21:45 local time
+Verdict: ROOT_CAUSE_PROBABLE
+
+Scope and safety
+---------------
+The diagnostic was read-only on the PRTG server. No PRTG template, script,
+service, configuration, or ACL was changed. No OAuth request, ServiceNow API
+request, Send Test Notification, live pilot, or production sensor failure was
+performed. No secret, client ID value, token, authorization header, config.xml
+value, or HTTP body was included in this report.
+
+Environment verified
+--------------------
+Host: UEFA-NPV-NWWG01
+PRTG: 26.3.124.1727 x64
+PowerShell: 5.1.20348.5499
+PRTGCoreService: Running as LocalSystem
+Execution policy: LocalMachine RemoteSigned; other listed scopes Undefined
+The three ServiceNow scripts had no Zone.Identifier stream.
+
+Incident supplied by operator
+-----------------------------
+Sensor 5531, Ping v2, Interphone CL Pedestrian:
+2026-10-11 15:45:51 Down
+2026-10-11 16:00:52 State Trigger fired after 900 seconds; email succeeded
+2026-10-11 19:05:40 Up; VOIP - Recovery email succeeded
+The operator received the email. Later, VOIP - Down showed Execute Program's
+Executable File as "Select a file".
+
+Installed files and identity
+----------------------------
+Directory:
+C:\Program Files (x86)\PRTG Network Monitor\notifications\exe
+
+Initialize-ServiceNowPrtg.ps1
+  Length 3360; modified 2026-08-18 14:58:43
+  SHA256 5540035FCB62F0BA3982EF52C24C8CC65691048F7BD5E22BACBFD111291ECF2A
+Send-PrtgServiceNowAlert.ps1
+  Length 13389; modified 2026-08-18 15:01:56
+  SHA256 BFC7EF9C42383F39405F85752D51C66D3D4BCA590895875544FDBC8F6838FC15
+Test-ServiceNowOAuth.ps1
+  Length 7495; modified 2026-08-18 15:00:43
+  SHA256 1D4CB2317A5AFEB191F28AB4A851AEF1D54C24A1E67828E2CD058CB7878D0339
+
+Workspace script hashes matched all three server hashes exactly. The main
+script parsed successfully with the Windows PowerShell 5.1 parser.
+
+Configuration metadata
+----------------------
+config.xml exists (2628 bytes; created/modified 2026-08-18 14:58:56).
+ServiceNow-notification.log exists (1280 bytes; created 2026-08-18 15:02:15;
+last modified 2026-08-18 17:29:52). Required property names were present and
+non-empty; no values were emitted.
+
+Actual target verified from sanitized URL metadata and script checks:
+- OAuth: https://uefadev.service-now.com/oauth_token.do
+- API: https://uefadev.service-now.com/api/x_ames2_monitori_0/alerts/network/prtg
+- Scope check passed: network_prtg
+- CoreId check passed: NYON-PRTG
+- ClientId and ProtectedClientSecret fields are non-empty; their values were
+  not viewed or printed.
+The script rejects a target other than these DEV URLs. Production suitability
+has not been established; no destination change is authorized by this report.
+
+Cause assessment
+----------------
+The Down trigger and email delivery are established. The Execute Program
+section is independent from email in PRTG. The executable field later displayed
+"Select a file", and no ServiceNow runtime START entry exists for sensor 5531
+on 2026-10-11. If the template had not changed since the incident, the script
+was likely never launched. This is the strongest explanation, but the state of
+the template at the incident time was not historically captured.
+
+Verdict remains ROOT_CAUSE_PROBABLE, not ROOT_CAUSE_CONFIRMED.
+Independent concern: if the script did run, its current configuration sends to
+DEV, not a production ServiceNow instance.
+
+Evidence limitations
+--------------------
+- Integration log last write was 2026-08-18; sanitized query found no line for
+  SensorId 5531 on 2026-10-11.
+- Core.log and CoreAPI.log last write was 2026-08-03. Searches found no
+  incident date or VOIP - Down marker. CoreAPI.log had 70 occurrences of 5531,
+  which cannot be tied to the incident.
+- PowerShell Operational was enabled but circular (552 records, 15 MiB); its
+  oldest retained event was 2026-10-19 08:28:24. It cannot prove October 11.
+- Security event 4688 query did not return a result. The command suppressed the
+  exception details, so no distinction can be made between permissions,
+  unavailable auditing, query failure, or no match.
+
+Important security and correctness risks
+-----------------------------------------
+- BUILTIN\Users had read/execute access to the scripts and read access to
+  config.xml and the log. The secret uses DPAPI LocalMachine. The initializer
+  does not set restrictive ACLs.
+- The main script reads up to 2000 characters of HTTP response body on failure
+  and writes it to log and console. Test-ServiceNowOAuth prints up to 1000
+  response-body characters on failure. Do not run either live test until this
+  is corrected and approved.
+- Main script's finally nulls sensitive variables but does not zero byte arrays.
+- The event ID uses a millisecond timestamp without a random component. A PRTG
+  process retry creates a fresh event ID.
+- PRTG retries Execute Program on nonzero exit up to three times; script errors
+  exit 1. The script lacks explicit 409 duplicate handling, transient retry,
+  and strict HTTP 201 validation.
+- Status is hard-coded to Down for Alert and Up for Recovery.
+
+What was and was not tested
+---------------------------
+- Read-only inventory, metadata, ACL, parser, URL metadata, and log searches
+  were performed.
+- The main script is syntactically valid in Windows PowerShell 5.1.
+- Earlier workspace Pester suite passed 15/15, fully offline; it does not
+  prove this server script's network behavior.
+- No NoSend run was performed. No live OAuth or ServiceNow call was made.
+
+Paessler documentation checked 2026-10-19
+-----------------------------------------
+Notification Templates:
+https://www.paessler.com/manuals/prtg/notification_templates
+Custom Notifications:
+https://www.paessler.com/manuals/prtg/custom_notifications
+Placeholders:
+https://www.paessler.com/manuals/prtg/list_of_placeholders_for_notifications
+Parameter escaping:
+https://www.paessler.com/manuals/prtg/escape_special_characters_and_whitespaces_in_parameters
+
+Conversation/tooling lessons
+----------------------------
+- The first terminal was PC24-1061, not the PRTG server. Always confirm host,
+  PowerShell version, and services before server diagnostics; user runs
+  production commands directly on the server.
+- In PowerShell 5.1, do not pipe directly after a foreach statement block.
+  Assign the foreach output to a variable, then pipe that variable.
+- config.xml is Export-Clixml-style serialized data, not simple named XML
+  elements. Inspect property names and presence only; never print values.
+- Do not catch Get-WinEvent errors into one generic "inaccessible" message.
+  Preserve only safe error type/FullyQualifiedErrorId metadata, because no
+  matches and access/query failures are different outcomes.
+- Keep every server command read-only and scoped; never dump config, logs,
+  event messages, response bodies, or raw security records.
+
+No production changes were made. The template's historical Executable File
+selection, intended ServiceNow environment, and process identity override
+remain to be confirmed.

@@ -121,3 +121,112 @@ Describe 'Scripted REST calls remain offline' {
         Assert-MockCalled Start-Sleep -ModuleName $moduleName -Times 1 -Exactly -Scope It
     }
 }
+
+Describe 'Installed notification script remains offline' {
+    BeforeEach {
+        $env:PRTG_TEST_SCRIPT = (Resolve-Path (Join-Path $PSScriptRoot '..\script\Send-PrtgServiceNowAlert.ps1')).Path
+        $env:PRTG_TEST_LOG = Join-Path $TestDrive 'notification.log'
+        $env:PRTG_TEST_ATTEMPTS = Join-Path $TestDrive 'attempts.log'
+        Remove-Item -LiteralPath $env:PRTG_TEST_LOG, $env:PRTG_TEST_ATTEMPTS -ErrorAction SilentlyContinue
+    }
+
+    AfterEach {
+        Remove-Item Env:PRTG_TEST_SCRIPT, Env:PRTG_TEST_LOG, Env:PRTG_TEST_ATTEMPTS, Env:PRTG_TEST_SCENARIO -ErrorAction SilentlyContinue
+    }
+
+    function Invoke-OfflineNotification {
+        param([string]$Scenario)
+        $env:PRTG_TEST_SCENARIO = $Scenario
+        $child = @'
+    Add-Type -AssemblyName System.Security
+function Import-Clixml {
+    $secret = [guid]::NewGuid().ToString('N')
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($secret)
+    $protected = [System.Security.Cryptography.ProtectedData]::Protect($bytes, $null, [System.Security.Cryptography.DataProtectionScope]::LocalMachine)
+    [PSCustomObject]@{
+        TokenUrl = 'https://uefadev.service-now.com/oauth_token.do'
+        AlertUrl = 'https://uefadev.service-now.com/api/x_ames2_monitori_0/alerts/network/prtg'
+        Scope = 'network_prtg'
+        ClientId = [guid]::NewGuid().ToString('N')
+        ProtectedClientSecret = [Convert]::ToBase64String($protected)
+        CoreId = 'NYON-PRTG'
+    }
+}
+function Invoke-RestMethod { [PSCustomObject]@{ access_token = [guid]::NewGuid().ToString('N') } }
+function Start-Sleep { }
+function Invoke-WebRequest {
+    param($Method, $Uri, $Headers, $ContentType, $Body, [switch]$UseBasicParsing, $TimeoutSec, $ErrorAction)
+    $eventId = ([System.Text.Encoding]::UTF8.GetString($Body) | ConvertFrom-Json).event_id
+    Add-Content -LiteralPath $env:PRTG_TEST_ATTEMPTS -Value $eventId
+    $count = @(Get-Content -LiteralPath $env:PRTG_TEST_ATTEMPTS).Count
+    if ($env:PRTG_TEST_SCENARIO -eq 'retry' -and $count -eq 1) { $code = 500 }
+    elseif ($env:PRTG_TEST_SCENARIO -eq 'throttle' -and $count -eq 1) { $code = 429 }
+    elseif ($env:PRTG_TEST_SCENARIO -eq 'duplicate') { $code = 409 }
+    elseif ($env:PRTG_TEST_SCENARIO -eq 'reject') { $code = 400 }
+    elseif ($env:PRTG_TEST_SCENARIO -eq 'unexpected') { return [PSCustomObject]@{ StatusCode = 202 } }
+    else { return [PSCustomObject]@{ StatusCode = 201 } }
+    $exception = New-Object System.Exception 'PRIVATE_EXCEPTION_MARKER'
+    $exception | Add-Member NoteProperty Response ([PSCustomObject]@{ StatusCode = $code; Content = 'PRIVATE_BODY_MARKER' })
+    throw $exception
+}
+$sensorId = if ($env:PRTG_TEST_SCENARIO -eq 'invalid') { "bad`nINJECTED" } else { '42' }
+& $env:PRTG_TEST_SCRIPT -EventType Alert -SensorId $sensorId -DeviceId '12' -DeviceName 'Test' -SensorName 'Test' -Message 'Test' -Priority '3' -ConfigurationPath $env:PRTG_TEST_SCRIPT -LogPath $env:PRTG_TEST_LOG
+'@
+        $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($child))
+        $output = & powershell.exe -NoProfile -EncodedCommand $encoded 2>&1 | Out-String
+        return [PSCustomObject]@{ ExitCode = $LASTEXITCODE; Output = $output }
+    }
+
+    It 'accepts 201 without exposing response data' {
+        $result = Invoke-OfflineNotification 'success'
+        (Get-Content $env:PRTG_TEST_LOG -Raw) | Should Match 'Stage=Post|SUCCESS'
+        $result.ExitCode | Should Be 0
+        @(Get-Content $env:PRTG_TEST_ATTEMPTS).Count | Should Be 1
+        $result.Output | Should Not Match 'PRIVATE_'
+    }
+
+    It 'accepts 409 once without exposing response data' {
+        $result = Invoke-OfflineNotification 'duplicate'
+        $result.ExitCode | Should Be 0
+        @(Get-Content $env:PRTG_TEST_ATTEMPTS).Count | Should Be 1
+        $result.Output | Should Not Match 'PRIVATE_'
+        (Get-Content $env:PRTG_TEST_LOG -Raw) | Should Match 'DUPLICATE'
+    }
+
+    It 'does not retry 400 or leak exception and body markers' {
+        $result = Invoke-OfflineNotification 'reject'
+        $result.ExitCode | Should Be 1
+        @(Get-Content $env:PRTG_TEST_ATTEMPTS).Count | Should Be 1
+        ($result.Output + (Get-Content $env:PRTG_TEST_LOG -Raw)) | Should Not Match 'PRIVATE_'
+    }
+
+    It 'retries 500 with the same event identifier' {
+        $result = Invoke-OfflineNotification 'retry'
+        $result.ExitCode | Should Be 0
+        $attempts = @(Get-Content $env:PRTG_TEST_ATTEMPTS)
+        $attempts.Count | Should Be 2
+        $attempts[0] | Should Be $attempts[1]
+    }
+
+    It 'retries 429 with the same event identifier' {
+        $result = Invoke-OfflineNotification 'throttle'
+        $result.ExitCode | Should Be 0
+        $attempts = @(Get-Content $env:PRTG_TEST_ATTEMPTS)
+        $attempts.Count | Should Be 2
+        $attempts[0] | Should Be $attempts[1]
+    }
+
+    It 'rejects malformed sensor IDs without writing them to the log' {
+        $result = Invoke-OfflineNotification 'invalid'
+        $result.ExitCode | Should Be 1
+        (Get-Content $env:PRTG_TEST_LOG -Raw) | Should Match 'SensorId=invalid'
+        (Get-Content $env:PRTG_TEST_LOG -Raw) | Should Not Match 'INJECTED'
+        (Test-Path $env:PRTG_TEST_ATTEMPTS) | Should Be $false
+    }
+
+    It 'rejects a non-201 successful response' {
+        $result = Invoke-OfflineNotification 'unexpected'
+        $result.ExitCode | Should Be 1
+        @(Get-Content $env:PRTG_TEST_ATTEMPTS).Count | Should Be 1
+    }
+}

@@ -8,7 +8,7 @@
       "args": [
         "-NoProfile",
         "-Command",
-        "$files = Get-ChildItem -File -Filter '*.ps1' -Recurse; foreach ($file in $files) { $tokens = $null; $errors = $null; [void][System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors); if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error ($file.FullName + ': ' + $_.Message) } } }; if ($Error.Count -gt 0) { exit 1 }"
+        "$files = Get-ChildItem -File -Filter '*.ps1' -Recurse; $parseFailures = @(); foreach ($file in $files) { $tokens = $null; $parseErrors = $null; [void][System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$parseErrors); foreach ($parseError in $parseErrors) { $parseFailures += ($file.FullName + ': ' + $parseError.Message) } }; if ($parseFailures.Count -gt 0) { $parseFailures; exit 1 }; Write-Output ('PowerShell syntax valid for ' + $files.Count + ' scripts.')"
       ],
       "problemMatcher": []
     },
